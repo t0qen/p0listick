@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+# Cette ligne indique au système que ce fichier est un script Python exécutable
+# La partie "#!/usr/bin/env python3" est ce qu'on appelle un "shebang" et permet d'exécuter le script directement sans taper "python" avant
+
+# ===== IMPORTATION DES MODULES =====
+# Les imports permettent d'utiliser du code déjà écrit par d'autres personnes
+import readline  # Ce module permet d'avoir un historique de commandes (flèches haut/bas)
+import re        # Module pour les expressions régulières (pour analyser les commandes)
+import sys       # Donne accès à des fonctions liées au système
+import time      # Permet d'utiliser des fonctions liées au temps (comme des pauses)
+import os        # Permet d'interagir avec le système d'exploitation
+from arduino_servo_controller import ArduinoServoController  # Importe notre classe spécifique qui communique avec l'Arduino
+
+# ===== DÉTECTION DES CAPACITÉS DU SYSTÈME =====
+# Cette partie essaie d'importer des modules pour la gestion du clavier
+# Si ces modules ne sont pas disponibles (par exemple sur Windows), on désactive certaines fonctionnalités
+try:
+    # Ces modules sont nécessaires pour lire les touches du clavier en temps réel
+    import termios    # Pour contrôler les paramètres du terminal
+    import tty        # Pour mettre le terminal en mode "raw" (lire touches sans appuyer sur Entrée)
+    import select     # Pour vérifier si une touche est disponible sans bloquer
+    KEYBOARD_AVAILABLE = True  # Si tous les imports réussissent, on note que le clavier est disponible
+except ImportError:
+    # Si un des modules n'est pas disponible
+    KEYBOARD_AVAILABLE = False  # On note que le clavier n'est pas totalement disponible
+    print("Module termios non disponible. Le mode interactif pourrait ne pas fonctionner correctement.")
+    # On informe l'utilisateur du problème potentiel
+
+# ===== FONCTION POUR LIRE UNE TOUCHE =====
+def getch():
+    """Lit un seul caractère du clavier sans attendre la touche Entrée"""
+    # Cette fonction lit une touche du clavier sans que l'utilisateur doive appuyer sur Entrée
+    
+    if not KEYBOARD_AVAILABLE:
+        # Si les modules de gestion du clavier ne sont pas disponibles
+        return input("Appuyez sur une touche > ")  # On utilise input() comme alternative
+    
+    # Si les modules sont disponibles, on utilise une méthode plus avancée
+    fd = sys.stdin.fileno()  # Obtient l'identifiant du flux d'entrée standard (clavier)
+    old_settings = termios.tcgetattr(fd)  # Sauvegarde les paramètres actuels du terminal
+    try:
+        tty.setraw(fd)  # Met le terminal en mode "raw" pour lire les touches directement
+        # Vérifie si une touche est disponible dans les 0.1 secondes
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            ch = sys.stdin.read(1)  # Lit un caractère
+        else:
+            ch = None  # Aucune touche n'a été pressée
+    finally:
+        # Restaure les paramètres originaux du terminal, même si une erreur survient
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch  # Renvoie le caractère lu ou None
+
+# ===== FONCTION POUR EFFACER L'ÉCRAN =====
+def clear_screen():
+    """Efface l'écran du terminal"""
+    # Cette fonction efface tout le contenu du terminal pour avoir un affichage propre
+    # Elle utilise la commande appropriée selon le système d'exploitation
+    os.system('cls' if os.name == 'nt' else 'clear')
+    # 'cls' est la commande pour Windows ('nt')
+    # 'clear' est la commande pour Linux/Mac (systèmes Unix)
+
+# ===== MODE INTERACTIF =====
+def interactive_mode(controller):
+    """Mode interactif utilisant les flèches et touches numériques"""
+    # Cette fonction permet de contrôler les servomoteurs avec le clavier
+    
+    current_servo = 0   # Indique quel servo est actuellement sélectionné (0-3)
+    angles = [90, 90, 90, 90]  # Angles par défaut pour chaque servo (90° position centrale)
+    step = 5  # Pas de modification d'angle (de combien de degrés on change à chaque touche)
+    
+    # Initialiser tous les servos à 90 degrés (position centrale)
+    for i in range(4):  # Pour chaque servo (0, 1, 2, 3)
+        controller.set_servo_angle(i, angles[i])  # On envoie la commande au servo
+        time.sleep(0.1)  # Pause de 0.1 seconde pour éviter de surcharger l'Arduino
+    
+    clear_screen()  # On efface l'écran pour afficher l'interface
+    
+    # Affichage des instructions
+    print("=== Mode Interactif ===")
+    print("Utilisez:")
+    print("  Touches 1-4: Sélectionner le servo (1-4)")
+    print("  Flèches gauche/droite: Modifier l'angle (-/+)")
+    print("  +/-: Modifier le pas de changement d'angle")
+    print("  r: Réinitialiser le servo à 90°")
+    print("  q: Quitter le mode interactif")
+    
+    # Boucle principale du mode interactif
+    while True:
+        # Afficher l'état actuel des servos
+        print("\n" + "-" * 40)  # Ligne de séparation
+        print(f"Servo actif: {current_servo+1} | Angle: {angles[current_servo]}° | Pas: {step}°")
+        
+        # Affichage des angles pour tous les servos
+        print("Angles des servos:", end=" ")
+        for i, angle in enumerate(angles):  # Pour chaque servo et son angle
+            if i == current_servo:
+                # Le servo actif est mis entre crochets
+                print(f"[{i+1}:{angle}°]", end=" ")
+            else:
+                # Les autres servos sont affichés normalement
+                print(f"{i+1}:{angle}°", end=" ")
+        print("\n" + "-" * 40)  # Ligne de séparation
+        
+        # Lire une touche du clavier
+        key = getch()
+        
+        if not key:  # Si aucune touche n'a été pressée
+            continue  # On recommence la boucle
+            
+        # === GESTION DES TOUCHES PRESSÉES ===
+        
+        # Quitter le mode interactif
+        if key in ['q', 'Q']:
+            print("Sortie du mode interactif")
+            break  # Quitte la boucle while
+            
+        # Sélectionner un servo avec les touches 1-4
+        if key in ['1', '2', '3', '4']:
+            current_servo = int(key) - 1  # Convertit la touche en numéro de servo (0-3)
+            print(f"Servo {current_servo+1} sélectionné")
+            
+        # Gestion des touches flèches (qui commencent par le caractère d'échappement \x1b)
+        elif key == '\x1b':
+            # Les touches flèches envoient une séquence de 3 caractères
+            getch()  # On ignore le deuxième caractère '['
+            arrow_key = getch()  # On lit le troisième caractère qui indique la direction
+            
+            if arrow_key == 'D':  # Flèche gauche
+                # Diminue l'angle en respectant la limite minimale (0°)
+                new_angle = max(0, angles[current_servo] - step)
+                if new_angle != angles[current_servo]:  # Si l'angle a changé
+                    angles[current_servo] = new_angle  # On met à jour la valeur stockée
+                    success, _ = controller.set_servo_angle(current_servo, new_angle)  # On envoie la commande
+                    if not success:
+                        print("Erreur lors du réglage de l'angle")
+                
+            elif arrow_key == 'C':  # Flèche droite
+                # Augmente l'angle en respectant la limite maximale (180°)
+                new_angle = min(180, angles[current_servo] + step)
+                if new_angle != angles[current_servo]:  # Si l'angle a changé
+                    angles[current_servo] = new_angle  # On met à jour la valeur stockée
+                    success, _ = controller.set_servo_angle(current_servo, new_angle)  # On envoie la commande
+                    if not success:
+                        print("Erreur lors du réglage de l'angle")
+        
+        # Modifier le pas de changement d'angle
+        elif key == '+':
+            step = min(20, step + 1)  # Augmente le pas avec un maximum de 20°
+            print(f"Pas modifié à {step}°")
+        elif key == '-':
+            step = max(1, step - 1)  # Diminue le pas avec un minimum de 1°
+            print(f"Pas modifié à {step}°")
+            
+        # Réinitialiser le servo actif à 90°
+        elif key in ['r', 'R']:
+            angles[current_servo] = 90  # Met à jour l'angle stocké
+            controller.set_servo_angle(current_servo, 90)  # Envoie la commande
+            print(f"Servo {current_servo+1} réinitialisé à 90°")
+        
+        # Pause pour éviter de surcharger le port série
+        time.sleep(0.05)
+        
+        # Effacer les lignes d'état pour la prochaine itération
+        print("\033[3A", end="")  # Code d'échappement ANSI: remonte le curseur de 3 lignes
+                                  # Cela permet de mettre à jour l'affichage sans scroller
+
+# ===== MODE INTERPRÉTEUR =====
+def interpreter_mode(controller):
+    """Mode interpréteur de commandes"""
+    # Cette fonction permet de contrôler les servos en tapant des commandes textuelles
+    
+    # Affichage des instructions
+    print("\n=== Mode Interpréteur ===")
+    print("Exemples de commandes:")
+    print("  a(0, 90)  - Positionne le servo 0 à 90 degrés")
+    print("  a(1, 45)  - Positionne le servo 1 à 45 degrés")
+    print("  a(2, 180) - Positionne le servo 2 à 180 degrés")
+    print("  a(3, 0)   - Positionne le servo 3 à 0 degré")
+    print("  exit      - Quitter le programme")
+    
+    # Boucle principale d'interprétation des commandes
+    while True:
+        try:
+            # Lecture d'une commande tapée par l'utilisateur
+            command = input("\n> ").strip()  # .strip() enlève les espaces en début/fin
+            
+            # Vérification de la commande de sortie
+            if command.lower() in ['exit', 'quit', 'q']:  # .lower() convertit en minuscules
+                print("Fermeture du mode interpréteur...")
+                break  # Quitte la boucle
+            
+            # Analyse de la commande avec une expression régulière
+            # Cherche le format a(servo, angle) et extrait les nombres
+            pattern = r'a\((\d+),\s*(\d+)\)'  # Format recherché: a(nombre, nombre)
+            match = re.match(pattern, command)  # Essaie de faire correspondre la commande au pattern
+            
+            if match:  # Si la commande correspond au format attendu
+                # Extraction des nombres trouvés dans la commande
+                servo_num = int(match.group(1))  # Premier nombre (numéro du servo)
+                angle = int(match.group(2))      # Deuxième nombre (angle)
+                
+                # Envoi de la commande au contrôleur
+                success, responses = controller.set_servo_angle(servo_num, angle)
+                
+                if success:  # Si la commande a réussi
+                    for response in responses:
+                        print(f"Arduino: {response}")  # Affiche les réponses de l'Arduino
+                else:  # Si la commande a échoué
+                    print(f"Erreur: {responses}")
+            else:  # Si la commande ne correspond pas au format attendu
+                print("Commande non reconnue. Format attendu: a(servo_num, angle)")
+        
+        except KeyboardInterrupt:  # Si l'utilisateur appuie sur Ctrl+C
+            print("\nFermeture du mode interpréteur...")
+            break  # Quitte la boucle
+        except Exception as e:  # Pour toute autre erreur
+            print(f"Erreur: {e}")  # Affiche l'erreur
+
+# ===== MODE SÉQUENCES PERSONNALISÉES =====
+def custom_movements(controller):
+    """
+    Mode séquences personnalisées
+    Cette fonction peut être modifiée pour inclure vos propres mouvements prédéfinis
+    """
+    # Cette fonction permet d'exécuter des séquences de mouvements préprogrammées
+    
+    # Affichage du menu des séquences
+    print("\n=== Mode Séquences Personnalisées ===")
+    print("Choisissez une séquence :")
+    print("1. Séquence 1 (exemple)")
+    print("2. Séquence 2 (exemple)")
+    print("3. Retour au menu principal")
+    
+    # Demande du choix à l'utilisateur
+    choice = input("Votre choix: ").strip()
+    
+    # Traitement du choix
+    if choice == '1':
+        print("Exécution de la séquence 1...")
+        # EXEMPLE: Vous pouvez remplacer ce code par vos propres séquences
+        sequence_1(controller)  # Appelle la fonction qui définit la séquence 1
+    elif choice == '2':
+        print("Exécution de la séquence 2...")
+        # EXEMPLE: Vous pouvez remplacer ce code par vos propres séquences
+        sequence_2(controller)  # Appelle la fonction qui définit la séquence 2
+    elif choice == '3':
+        return  # Retourne au menu principal
+    else:
+        print("Choix invalide.")  # Si l'utilisateur entre autre chose que 1, 2 ou 3
+        
+# ===== DÉFINITION DES SÉQUENCES =====
+def sequence_1(controller):
+    """
+    Exemple de séquence 1
+    À personnaliser selon vos besoins
+    """
+    # CETTE FONCTION EST À MODIFIER POUR VOTRE PROPRE SÉQUENCE
+    print("Séquence 1 - Mouvement d'exemple")
+    
+    # Exemple de mouvements séquentiels (un après l'autre)
+    controller.set_servo_angle(0, 0)    # Déplace le servo 0 à 0°
+    time.sleep(0.5)                     # Attend 0.5 seconde
+    controller.set_servo_angle(0, 180)  # Déplace le servo 0 à 180°
+    time.sleep(0.5)                     # Attend 0.5 seconde
+    controller.set_servo_angle(0, 90)   # Déplace le servo 0 à 90° (centre)
+    time.sleep(0.5)                     # Attend 0.5 seconde
+    
+    print("Séquence 1 terminée. Appuyez sur Entrée pour continuer...")
+    input()  # Attend que l'utilisateur appuie sur Entrée
+    
+def sequence_2(controller):
+    """
+    Exemple de séquence 2
+    À personnaliser selon vos besoins
+    """
+    # CETTE FONCTION EST À MODIFIER POUR VOTRE PROPRE SÉQUENCE
+    print("Séquence 2 - Mouvement d'exemple")
+    
+    # Exemple de mouvements coordonnés entre deux servos
+    # Cette boucle va de 0 à 180 par pas de 10
+    for angle in range(0, 181, 10):
+        controller.set_servo_angle(1, angle)         # Servo 1: angle augmente de 0° à 180°
+        controller.set_servo_angle(2, 180 - angle)   # Servo 2: angle diminue de 180° à 0°
+        time.sleep(0.1)                              # Pause de 0.1 seconde entre chaque pas
+    
+    print("Séquence 2 terminée. Appuyez sur Entrée pour continuer...")
+    input()  # Attend que l'utilisateur appuie sur Entrée
+
+# ===== PROGRAMME PRINCIPAL =====
+def main():
+    """
+    Programme principal qui utilise le module ArduinoServoController
+    """
+    print("=== Contrôleur de Servomoteurs Arduino ===")
+    
+    # Configuration du port série
+    port = '/dev/ttyUSB0'  # Port par défaut (typique sur Linux)
+    
+    # Permettre la spécification d'un port différent via les arguments de ligne de commande
+    if len(sys.argv) > 1:  # Si au moins un argument a été passé
+        port = sys.argv[1]  # Le premier argument est considéré comme le port
+    
+    # Initialisation du contrôleur avec le port spécifié
+    controller = ArduinoServoController(port=port)
+    print(f"Connexion à l'Arduino sur {port}...")
+    
+    # Tentative de connexion à l'Arduino
+    success, messages = controller.connect()
+    if not success:  # Si la connexion a échoué
+        print(f"Erreur de connexion: {messages}")
+        return  # Quitte la fonction main()
+    
+    # Si la connexion a réussi
+    print("Connexion établie!")
+    for msg in messages:
+        print(f"Arduino: {msg}")  # Affiche les messages de l'Arduino
+    
+    # ===== BOUCLE PRINCIPALE DU MENU =====
+    while True:
+        # Affichage du menu principal
+        clear_screen()
+        print("\n=== Menu Principal ===")
+        print("Choisissez un mode:")
+        print("1. Mode interactif (flèches et touches numériques)")
+        print("2. Mode interpréteur (commandes textuelles)")
+        print("3. Mode séquences personnalisées")
+        print("4. Quitter le programme")
+        
+        # Demande du choix à l'utilisateur
+        choice = input("Votre choix (1-4): ").strip()
+        
+        # Traitement du choix
+        if choice == '1':  # Mode interactif
+            # Vérification de la compatibilité (pour les systèmes autres que Windows)
+            if not KEYBOARD_AVAILABLE and os.name != 'nt':
+                print("Attention: Le mode interactif nécessite les modules termios, tty et select.")
+                print("Ces modules peuvent ne pas être disponibles sur tous les systèmes.")
+                confirm = input("Continuer quand même? (o/n): ").lower()
+                if confirm != 'o':  # Si l'utilisateur ne confirme pas
+                    continue  # Retourne au menu principal
+            interactive_mode(controller)  # Lance le mode interactif
+            
+        elif choice == '2':  # Mode interpréteur
+            interpreter_mode(controller)  # Lance le mode interpréteur
+            
+        elif choice == '3':  # Mode séquences personnalisées
+            custom_movements(controller)  # Lance le mode séquences
+            
+        elif choice == '4':  # Quitter le programme
+            print("Fermeture du programme...")
+            break  # Quitte la boucle principale
+            
+        else:  # Si l'utilisateur entre autre chose que 1, 2, 3 ou 4
+            print("Choix invalide. Veuillez entrer un nombre entre 1 et 4.")
+            time.sleep(1)  # Pause d'1 seconde pour que l'utilisateur puisse lire le message
+    
+    # Fermeture propre de la connexion avant de quitter
+    controller.disconnect()
+    print("Connexion fermée. Merci d'avoir utilisé le contrôleur de servomoteurs!")
+
+# ===== POINT D'ENTRÉE DU PROGRAMME =====
+if __name__ == "__main__":
+    # Cette condition vérifie si le script est exécuté directement (et non importé)
+    # C'est une pratique standard en Python
+    main()  # Si c'est le cas, on appelle la fonction principale
