@@ -60,161 +60,195 @@ def clear_screen():
     # 'clear' est la commande pour Linux/Mac (systèmes Unix)
 
 # ===== MODE INTERACTIF =====
+#!/usr/bin/env python3
+# Les imports et les fonctions précédentes restent inchangés
+# Modification du mode interactif et du mode interpréteur
+
+# ===== MODE INTERACTIF =====
 def interactive_mode(controller):
-    """Mode interactif utilisant les flèches et touches numériques"""
-    # Cette fonction permet de contrôler les servomoteurs avec le clavier
+    """Mode interactif utilisant les touches pour contrôler les servos"""
     
-    current_servo = 0   # Indique quel servo est actuellement sélectionné (0-3)
+    # Tableau des angles des servos
     angles = [90, 90, 90, 90]  # Angles par défaut pour chaque servo (90° position centrale)
     step = 5  # Pas de modification d'angle (de combien de degrés on change à chaque touche)
     
-    # Initialiser tous les servos à 90 degrés (position centrale)
-    for i in range(4):  # Pour chaque servo (0, 1, 2, 3)
-        controller.set_servo_angle(i, angles[i])  # On envoie la commande au servo
-        time.sleep(0.1)  # Pause de 0.1 seconde pour éviter de surcharger l'Arduino
+    # Mapping des touches aux servos
+    # Format: {touche: (numéro_servo, direction)}
+    key_servo_mapping = {
+        'l': (1, -1),  # Servo 1 (J/K) diminue
+        'm': (1, 1),   # Servo 1 (J/K) augmente
+        'j': (2, -1),  # Servo 2 (J/K) diminue
+        'k': (2, 1),   # Servo 2 (J/K) augmente
+        'u': (3, -1),  # Servo 3 (U/I) diminue
+        'i': (3, 1),   # Servo 3 (U/I) augmente
+        'o': (0, -1),  # Servo 4 (O/P) diminue
+        'p': (0, 1)    # Servo 4 (O/P) augmente
+    }
     
-    clear_screen()  # On efface l'écran pour afficher l'interface
+    # Initialiser tous les servos à 90 degrés (position centrale)
+    for i in range(4):
+        controller.set_servo_angle(i, angles[i])
+        time.sleep(0.1)
+    
+    clear_screen()
     
     # Affichage des instructions
-    print("=== Mode Interactif ===")
-    print("Utilisez:")
-    print("  Touches 1-4: Sélectionner le servo (1-4)")
-    print("  Flèches gauche/droite: Modifier l'angle (-/+)")
+    print("=== Mode Interactif Avancé ===")
+    print("Contrôle des servos :")
+    print("  Servo 1 (L/M): Diminuer/Augmenter")
+    print("  Servo 2 (J/K): Diminuer/Augmenter")
+    print("  Servo 3 (U/I): Diminuer/Augmenter")
+    print("  Servo 4 (O/P): Diminuer/Augmenter")
     print("  +/-: Modifier le pas de changement d'angle")
-    print("  r: Réinitialiser le servo à 90°")
+    print("  r: Réinitialiser tous les servos à 90°")
     print("  q: Quitter le mode interactif")
     
     # Boucle principale du mode interactif
     while True:
         # Afficher l'état actuel des servos
-        print("\n" + "-" * 40)  # Ligne de séparation
-        print(f"Servo actif: {current_servo+1} | Angle: {angles[current_servo]}° | Pas: {step}°")
+        print("\n" + "-" * 40)
+        print(f"Pas de changement: {step}°")
         
         # Affichage des angles pour tous les servos
         print("Angles des servos:", end=" ")
-        for i, angle in enumerate(angles):  # Pour chaque servo et son angle
-            if i == current_servo:
-                # Le servo actif est mis entre crochets
-                print(f"[{i+1}:{angle}°]", end=" ")
-            else:
-                # Les autres servos sont affichés normalement
-                print(f"{i+1}:{angle}°", end=" ")
-        print("\n" + "-" * 40)  # Ligne de séparation
+        for i, angle in enumerate(angles):
+            print(f"{i+1}:{angle}°", end=" ")
+        print("\n" + "-" * 40)
         
         # Lire une touche du clavier
         key = getch()
         
         if not key:  # Si aucune touche n'a été pressée
-            continue  # On recommence la boucle
+            continue
             
-        # === GESTION DES TOUCHES PRESSÉES ===
-        
-        # Quitter le mode interactif
+        # Gestion des touches pressées
         if key in ['q', 'Q']:
             print("Sortie du mode interactif")
-            break  # Quitte la boucle while
+            break
+        
+        # Modification des servos
+        if key in key_servo_mapping:
+            servo, direction = key_servo_mapping[key]
             
-        # Sélectionner un servo avec les touches 1-4
-        if key in ['1', '2', '3', '4']:
-            current_servo = int(key) - 1  # Convertit la touche en numéro de servo (0-3)
-            print(f"Servo {current_servo+1} sélectionné")
+            # Calculer le nouvel angle
+            new_angle = angles[servo] + (step * direction)
             
-        # Gestion des touches flèches (qui commencent par le caractère d'échappement \x1b)
-        elif key == '\x1b':
-            # Les touches flèches envoient une séquence de 3 caractères
-            getch()  # On ignore le deuxième caractère '['
-            arrow_key = getch()  # On lit le troisième caractère qui indique la direction
+            # S'assurer que l'angle reste entre 0 et 180
+            new_angle = max(0, min(180, new_angle))
             
-            if arrow_key == 'D':  # Flèche gauche
-                # Diminue l'angle en respectant la limite minimale (0°)
-                new_angle = max(0, angles[current_servo] - step)
-                if new_angle != angles[current_servo]:  # Si l'angle a changé
-                    angles[current_servo] = new_angle  # On met à jour la valeur stockée
-                    success, _ = controller.set_servo_angle(current_servo, new_angle)  # On envoie la commande
-                    if not success:
-                        print("Erreur lors du réglage de l'angle")
-                
-            elif arrow_key == 'C':  # Flèche droite
-                # Augmente l'angle en respectant la limite maximale (180°)
-                new_angle = min(180, angles[current_servo] + step)
-                if new_angle != angles[current_servo]:  # Si l'angle a changé
-                    angles[current_servo] = new_angle  # On met à jour la valeur stockée
-                    success, _ = controller.set_servo_angle(current_servo, new_angle)  # On envoie la commande
-                    if not success:
-                        print("Erreur lors du réglage de l'angle")
+            # Mettre à jour l'angle
+            angles[servo] = new_angle
+            
+            # Envoyer la commande au servo
+            success, _ = controller.set_servo_angle(servo, new_angle)
+            if not success:
+                print(f"Erreur lors du réglage de l'angle du servo {servo+1}")
         
         # Modifier le pas de changement d'angle
         elif key == '+':
-            step = min(20, step + 1)  # Augmente le pas avec un maximum de 20°
+            step = min(20, step + 1)
             print(f"Pas modifié à {step}°")
         elif key == '-':
-            step = max(1, step - 1)  # Diminue le pas avec un minimum de 1°
+            step = max(1, step - 1)
             print(f"Pas modifié à {step}°")
-            
-        # Réinitialiser le servo actif à 90°
+        
+        # Réinitialiser tous les servos à 90°
         elif key in ['r', 'R']:
-            angles[current_servo] = 90  # Met à jour l'angle stocké
-            controller.set_servo_angle(current_servo, 90)  # Envoie la commande
-            print(f"Servo {current_servo+1} réinitialisé à 90°")
+            reset_angles = [90, 90, 90, 90]
+            
+            # Mettre à jour les angles stockés
+            angles = reset_angles.copy()
+            
+            # Envoyer la commande à tous les servos en même temps
+            success, responses = controller.set_servo_angle([0, 1, 2, 3], reset_angles, multi_servo=True)
+            
+            if success:
+                print("Tous les servos réinitialisés à 90°")
+            else:
+                print("Erreur lors de la réinitialisation des servos")
         
         # Pause pour éviter de surcharger le port série
         time.sleep(0.05)
         
         # Effacer les lignes d'état pour la prochaine itération
-        print("\033[3A", end="")  # Code d'échappement ANSI: remonte le curseur de 3 lignes
-                                  # Cela permet de mettre à jour l'affichage sans scroller
+        print("\033[3A", end="")  # Remonte le curseur de 3 lignes
 
 # ===== MODE INTERPRÉTEUR =====
 def interpreter_mode(controller):
     """Mode interpréteur de commandes"""
-    # Cette fonction permet de contrôler les servos en tapant des commandes textuelles
     
     # Affichage des instructions
     print("\n=== Mode Interpréteur ===")
     print("Exemples de commandes:")
-    print("  a(0, 90)  - Positionne le servo 0 à 90 degrés")
-    print("  a(1, 45)  - Positionne le servo 1 à 45 degrés")
-    print("  a(2, 180) - Positionne le servo 2 à 180 degrés")
-    print("  a(3, 0)   - Positionne le servo 3 à 0 degré")
-    print("  exit      - Quitter le programme")
+    print("  a(0, 90)        - Positionne le servo 0 à 90 degrés")
+    print("  a(1, 45, 2, 135) - Positionne les servos 1 et 2 simultanément")
+    print("  a(0, 0, 1, 180, 2, 90, 3, 45) - Positionne 4 servos")
+    print("  exit            - Quitter le programme")
     
     # Boucle principale d'interprétation des commandes
     while True:
         try:
             # Lecture d'une commande tapée par l'utilisateur
-            command = input("\n> ").strip()  # .strip() enlève les espaces en début/fin
+            command = input("\n> ").strip()
             
             # Vérification de la commande de sortie
-            if command.lower() in ['exit', 'quit', 'q']:  # .lower() convertit en minuscules
+            if command.lower() in ['exit', 'quit', 'q']:
                 print("Fermeture du mode interpréteur...")
-                break  # Quitte la boucle
+                break
             
             # Analyse de la commande avec une expression régulière
-            # Cherche le format a(servo, angle) et extrait les nombres
-            pattern = r'a\((\d+),\s*(\d+)\)'  # Format recherché: a(nombre, nombre)
-            match = re.match(pattern, command)  # Essaie de faire correspondre la commande au pattern
+            pattern = r'a\(([^)]+)\)'
+            match = re.match(pattern, command)
             
-            if match:  # Si la commande correspond au format attendu
-                # Extraction des nombres trouvés dans la commande
-                servo_num = int(match.group(1))  # Premier nombre (numéro du servo)
-                angle = int(match.group(2))      # Deuxième nombre (angle)
+            if match:
+                # Extraire les arguments
+                args_str = match.group(1)
                 
-                # Envoi de la commande au contrôleur
-                success, responses = controller.set_servo_angle(servo_num, angle)
-                
-                if success:  # Si la commande a réussi
-                    for response in responses:
-                        print(f"Arduino: {response}")  # Affiche les réponses de l'Arduino
-                else:  # Si la commande a échoué
-                    print(f"Erreur: {responses}")
-            else:  # Si la commande ne correspond pas au format attendu
-                print("Commande non reconnue. Format attendu: a(servo_num, angle)")
+                # Diviser les arguments en couples (servo, angle)
+                try:
+                    # Convertir la chaîne d'arguments en liste d'entiers
+                    args = [int(x.strip()) for x in args_str.split(',')]
+                    
+                    # Vérifier que le nombre d'arguments est pair 
+                    # et que chaque paire correspond bien à (servo, angle)
+                    if len(args) % 2 != 0 or len(args) > 8:
+                        raise ValueError("Nombre incorrect d'arguments")
+                    
+                    # Séparer les servos et les angles
+                    servos = args[::2]   # Arguments pairs (indices 0, 2, 4...)
+                    angles = args[1::2]  # Arguments impairs (indices 1, 3, 5...)
+                    
+                    # Vérifier que tous les servos sont valides
+                    if any(s < 0 or s > 3 for s in servos):
+                        raise ValueError("Numéro de servo invalide")
+                    
+                    # Vérifier que tous les angles sont valides
+                    if any(a < 0 or a > 180 for a in angles):
+                        raise ValueError("Angle invalide")
+                    
+                    # Envoi de la commande au contrôleur
+                    success, responses = controller.set_servo_angle(servos, angles, multi_servo=True)
+                    
+                    if success:
+                        for response in responses:
+                            print(f"Arduino: {response}")
+                    else:
+                        print(f"Erreur: {responses}")
+                    
+                except ValueError as e:
+                    print(f"Erreur de format: {e}")
+                    print("Format attendu: a(servo1, angle1, servo2, angle2, ...)")
+            else:
+                print("Commande non reconnue. Format attendu: a(servo1, angle1, servo2, angle2, ...)")
         
-        except KeyboardInterrupt:  # Si l'utilisateur appuie sur Ctrl+C
+        except KeyboardInterrupt:
             print("\nFermeture du mode interpréteur...")
-            break  # Quitte la boucle
-        except Exception as e:  # Pour toute autre erreur
-            print(f"Erreur: {e}")  # Affiche l'erreur
+            break
+        except Exception as e:
+            print(f"Erreur: {e}")
+
+# Le reste du code reste identique (main() et autres fonctions)
+
 
 # ===== MODE SÉQUENCES PERSONNALISÉES =====
 def custom_movements(controller):
