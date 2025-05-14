@@ -14,6 +14,11 @@ void setup() {
   servo1.attach(5);
   servo2.attach(6);
   servo3.attach(9);
+  
+  servo0.write(90);
+  servo1.write(90);
+  servo2.write(90);
+  servo3.write(90);
 }
 
 void loop() {
@@ -40,9 +45,14 @@ void loop() {
     }
 
     if (value_count % 2 == 0 && value_count > 0) {
+      Serial.println("Received");
       for (int i = 0; i < value_count; i += 2) {
         int servo_num = values[i];
         int angle = values[i+1];
+        
+        if (servo_num = 2 ||servo_num = 3) {
+          angle = abs(angle - 180);
+        }
         
         switch(servo_num) {
           case 0:
